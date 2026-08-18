@@ -1,0 +1,1855 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>3D Neon Tetris - Standalone</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+      :root {
+        --bg-color: #03030c;
+        --panel-bg: rgba(10, 10, 25, 0.7);
+        --border-neon: #00f3ff;
+        --accent-neon: #ff0077;
+        --accent-neon-green: #39ff14;
+        --text-main: #f0f0ff;
+        --text-dim: #8b8ba9;
+        --neon-shadow:
+          0 0 10px rgba(0, 243, 255, 0.5), 0 0 20px rgba(0, 243, 255, 0.2);
+        --neon-text-shadow:
+          0 0 5px rgba(0, 243, 255, 0.8), 0 0 10px rgba(0, 243, 255, 0.5);
+        --neon-pink-shadow:
+          0 0 10px rgba(255, 0, 119, 0.5), 0 0 20px rgba(255, 0, 119, 0.2);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body {
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        font-family: "Rajdhani", sans-serif;
+        overflow: hidden;
+        height: 100vh;
+        width: 100vw;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #game-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 1200px;
+        height: 100%;
+        max-height: 900px;
+        padding: 20px;
+        gap: 15px;
+      }
+
+      /* Header */
+      .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid var(--border-neon);
+        padding-bottom: 10px;
+        box-shadow: 0 4px 15px -10px var(--border-neon);
+      }
+
+      .logo {
+        font-family: "Orbitron", sans-serif;
+        font-size: 1.8rem;
+        font-weight: 900;
+        letter-spacing: 2px;
+        color: #fff;
+        text-shadow: var(--neon-text-shadow);
+      }
+
+      .logo span {
+        color: var(--accent-neon);
+        text-shadow: var(--neon-pink-shadow);
+      }
+
+      .icon-btn {
+        background: transparent;
+        border: none;
+        color: var(--border-neon);
+        cursor: pointer;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        filter: drop-shadow(0 0 5px var(--border-neon));
+      }
+
+      .icon-btn:hover {
+        color: #fff;
+        transform: scale(1.1);
+      }
+
+      .icon-btn.muted {
+        color: var(--text-dim);
+        filter: none;
+      }
+
+      /* Game Layout */
+      .game-layout {
+        display: flex;
+        flex: 1;
+        gap: 20px;
+        min-height: 0;
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        width: 220px;
+        flex-shrink: 0;
+      }
+
+      .panel {
+        background: var(--panel-bg);
+        border: 1px solid rgba(0, 243, 255, 0.2);
+        border-radius: 12px;
+        padding: 15px;
+        backdrop-filter: blur(8px);
+        box-shadow: inset 0 0 15px rgba(0, 243, 255, 0.05);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .panel h3 {
+        font-family: "Orbitron", sans-serif;
+        font-size: 1.1rem;
+        letter-spacing: 1px;
+        color: var(--border-neon);
+        margin-bottom: 12px;
+        text-shadow: var(--neon-text-shadow);
+      }
+
+      .preview-box {
+        width: 120px;
+        height: 120px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px dashed rgba(0, 243, 255, 0.3);
+        border-radius: 8px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .stats-panel {
+        flex: 1;
+        justify-content: space-around;
+        align-items: stretch;
+      }
+
+      .stat-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .stat-label {
+        font-size: 0.85rem;
+        color: var(--text-dim);
+        letter-spacing: 1.5px;
+      }
+
+      .stat-value {
+        font-family: "Orbitron", sans-serif;
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #fff;
+        text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+      }
+
+      /* Center Board */
+      .board-container {
+        flex: 1;
+        position: relative;
+        background: rgba(0, 0, 0, 0.3);
+        border: 2px solid rgba(0, 243, 255, 0.15);
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 0 30px rgba(0, 243, 255, 0.05);
+      }
+
+      #canvas-holder {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Overlays */
+      .overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(3, 3, 12, 0.85);
+        backdrop-filter: blur(10px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+      }
+
+      .overlay.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .overlay-content {
+        text-align: center;
+        max-width: 400px;
+        padding: 30px;
+        border-radius: 20px;
+        background: rgba(10, 10, 25, 0.9);
+        border: 1px solid var(--border-neon);
+        box-shadow:
+          var(--neon-shadow),
+          inset 0 0 20px rgba(0, 243, 255, 0.1);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .overlay-content h1 {
+        font-family: "Orbitron", sans-serif;
+        font-size: 2.5rem;
+        font-weight: 900;
+        letter-spacing: 2px;
+        color: #fff;
+        text-shadow: var(--neon-text-shadow);
+      }
+
+      .overlay-content h2 {
+        font-family: "Orbitron", sans-serif;
+        font-size: 2rem;
+        color: var(--accent-neon);
+        text-shadow: var(--neon-pink-shadow);
+      }
+
+      .subtitle {
+        font-size: 1rem;
+        color: var(--text-dim);
+      }
+
+      .primary-btn,
+      .secondary-btn {
+        font-family: "Orbitron", sans-serif;
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        padding: 12px 35px;
+        border-radius: 30px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        width: 80%;
+      }
+
+      .primary-btn {
+        background: var(--border-neon);
+        border: none;
+        color: #03030c;
+        box-shadow: 0 0 15px rgba(0, 243, 255, 0.4);
+      }
+
+      .primary-btn:hover {
+        background: #fff;
+        box-shadow: 0 0 25px rgba(255, 255, 255, 0.8);
+        transform: translateY(-2px);
+      }
+
+      .secondary-btn {
+        background: transparent;
+        border: 2px solid var(--accent-neon);
+        color: var(--accent-neon);
+        box-shadow: 0 0 10px rgba(255, 0, 119, 0.2);
+      }
+
+      .secondary-btn:hover {
+        background: var(--accent-neon);
+        color: #fff;
+        box-shadow: 0 0 20px rgba(255, 0, 119, 0.6);
+        transform: translateY(-2px);
+      }
+
+      .button-group {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        width: 100%;
+        align-items: center;
+      }
+
+      .controls-guide {
+        margin-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding-top: 15px;
+        width: 100%;
+        text-align: left;
+      }
+
+      .controls-guide h4 {
+        font-size: 0.9rem;
+        color: var(--border-neon);
+        margin-bottom: 8px;
+        letter-spacing: 1px;
+      }
+
+      .controls-guide ul {
+        list-style: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        font-size: 0.8rem;
+      }
+
+      .controls-guide li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-dim);
+      }
+
+      .controls-guide span {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-family: "Orbitron", sans-serif;
+        font-size: 0.7rem;
+        color: #fff;
+        min-width: 45px;
+        text-align: center;
+      }
+
+      /* Game Over overlay custom stats */
+      .final-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 1.1rem;
+        margin: 10px 0;
+        width: 100%;
+      }
+
+      .final-stats p {
+        display: flex;
+        justify-content: space-between;
+        color: var(--text-dim);
+        border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+        padding-bottom: 4px;
+      }
+
+      .final-stats span {
+        font-weight: 700;
+        color: #fff;
+      }
+
+      /* Animations */
+      @keyframes popIn {
+        0% {
+          transform: scale(0.8);
+          opacity: 0;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      .animate-pop {
+        animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      }
+
+      /* Mobile Controls */
+      .mobile-controls {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .controls-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .control-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: var(--text-main);
+        font-family: "Orbitron", sans-serif;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        outline: none;
+        transition:
+          background 0.1s,
+          transform 0.05s;
+        touch-action: manipulation;
+      }
+
+      .control-btn:active {
+        background: var(--border-neon);
+        color: #03030c;
+        box-shadow: 0 0 15px var(--border-neon);
+        transform: scale(0.95);
+      }
+
+      .control-btn.square {
+        height: 50px;
+        flex: 1;
+        border-radius: 8px;
+        font-size: 0.9rem;
+      }
+
+      .control-btn.circle {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        font-size: 0.8rem;
+        border-color: var(--accent-neon);
+      }
+
+      .control-btn.circle:active {
+        background: var(--accent-neon);
+        color: #fff;
+        box-shadow: 0 0 15px var(--accent-neon);
+      }
+
+      .control-btn.arrow {
+        width: 70px;
+        height: 70px;
+        border-radius: 12px;
+        font-size: 1.8rem;
+        border-color: var(--border-neon);
+      }
+
+      .center-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex: 1;
+      }
+
+      .drop-btn {
+        height: 38px;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        width: 100%;
+      }
+
+      /* Responsiveness */
+      @media (max-width: 850px) {
+        #game-container {
+          padding: 10px;
+        }
+
+        .game-layout {
+          gap: 10px;
+        }
+
+        .sidebar {
+          width: 110px;
+          gap: 10px;
+        }
+
+        .panel {
+          padding: 10px;
+        }
+
+        .panel h3 {
+          font-size: 0.85rem;
+          margin-bottom: 8px;
+        }
+
+        .preview-box {
+          width: 80px;
+          height: 80px;
+        }
+
+        .stat-label {
+          font-size: 0.7rem;
+        }
+
+        .stat-value {
+          font-size: 1.1rem;
+        }
+      }
+
+      /* Portrait Mobile Phone Layout */
+      @media (max-width: 600px) {
+        body {
+          align-items: stretch;
+        }
+
+        #game-container {
+          height: 100vh;
+          max-height: none;
+          padding: 10px;
+        }
+
+        .logo {
+          font-size: 1.3rem;
+        }
+
+        .game-layout {
+          flex-direction: row;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .board-container {
+          order: 1;
+          width: 100%;
+          height: calc(100% - 210px);
+          flex: none;
+        }
+
+        .sidebar.left-sidebar {
+          order: 2;
+          width: 48%;
+          flex-direction: row;
+          align-items: center;
+          gap: 0;
+        }
+
+        .sidebar.right-sidebar {
+          order: 3;
+          width: 48%;
+          flex-direction: row;
+          align-items: center;
+          gap: 0;
+        }
+
+        .sidebar.left-sidebar .panel,
+        .sidebar.right-sidebar .panel {
+          width: 100%;
+          height: 100%;
+          flex-direction: row;
+          justify-content: space-around;
+          align-items: center;
+          padding: 5px;
+        }
+
+        .sidebar .preview-box {
+          width: 50px;
+          height: 50px;
+        }
+
+        .sidebar h3 {
+          display: none;
+        }
+
+        .stats-panel {
+          display: flex;
+          flex-direction: row !important;
+          justify-content: space-around;
+          width: 100%;
+        }
+
+        .stat-item {
+          gap: 0;
+        }
+
+        .stat-value {
+          font-size: 1rem;
+        }
+
+        .mobile-controls {
+          display: flex;
+          order: 4;
+          width: 100%;
+          padding-bottom: 5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <!-- Header -->
+      <header class="game-header">
+        <div class="logo">NEON <span>3D</span> TETRIS</div>
+        <button id="mute-btn" class="icon-btn" aria-label="Toggle Sound">
+          <svg id="volume-icon" viewBox="0 0 24 24" width="24" height="24">
+            <path
+              fill="currentColor"
+              d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.07,19.86 21,16.28 21,12C21,7.72 18.07,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.77 16.5,12M3,9V15H7L12,20V4L7,9H3Z"
+            />
+          </svg>
+        </button>
+      </header>
+
+      <!-- Main Game Area -->
+      <div class="game-layout">
+        <!-- Left Sidebar (Hold Piece) -->
+        <aside class="sidebar left-sidebar">
+          <div class="panel hold-panel">
+            <h3>HOLD</h3>
+            <div class="preview-box" id="hold-preview"></div>
+          </div>
+        </aside>
+
+        <!-- Center 3D Board Canvas Container -->
+        <main class="board-container">
+          <div id="canvas-holder"></div>
+
+          <!-- Start Screen Overlay -->
+          <div id="start-overlay" class="overlay active">
+            <div class="overlay-content">
+              <h1>NEON TETRIS</h1>
+              <p class="subtitle">
+                Experience classic Tetris in a glowing 3D dimension
+              </p>
+              <button id="start-btn" class="primary-btn">START GAME</button>
+              <div class="controls-guide">
+                <h4>CONTROLS</h4>
+                <ul>
+                  <li><span>← / →</span> Move Piece</li>
+                  <li><span>↑</span> Rotate Piece</li>
+                  <li><span>↓</span> Soft Drop</li>
+                  <li><span>SPACE</span> Hard Drop</li>
+                  <li><span>SHIFT / C</span> Hold Piece</li>
+                  <li><span>P / ESC</span> Pause</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pause Overlay -->
+          <div id="pause-overlay" class="overlay">
+            <div class="overlay-content">
+              <h2>GAME PAUSED</h2>
+              <div class="button-group">
+                <button id="resume-btn" class="primary-btn">RESUME</button>
+                <button id="restart-btn" class="secondary-btn">RESTART</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Game Over Overlay -->
+          <div id="gameover-overlay" class="overlay">
+            <div class="overlay-content animate-pop">
+              <h2 class="gameover-title">GAME OVER</h2>
+              <div class="final-stats">
+                <p>Score: <span id="final-score">0</span></p>
+                <p>Level Achieved: <span id="final-level">1</span></p>
+                <p>Lines Cleared: <span id="final-lines">0</span></p>
+              </div>
+              <button id="play-again-btn" class="primary-btn">
+                PLAY AGAIN
+              </button>
+            </div>
+          </div>
+        </main>
+
+        <!-- Right Sidebar (Stats & Next Piece) -->
+        <aside class="sidebar right-sidebar">
+          <div class="panel next-panel">
+            <h3>NEXT</h3>
+            <div class="preview-box" id="next-preview"></div>
+          </div>
+
+          <div class="panel stats-panel">
+            <div class="stat-item">
+              <span class="stat-label">SCORE</span>
+              <span class="stat-value" id="score-val">000000</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">HIGH SCORE</span>
+              <span class="stat-value" id="highscore-val">000000</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">LEVEL</span>
+              <span class="stat-value" id="level-val">1</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">LINES</span>
+              <span class="stat-value" id="lines-val">0</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Mobile Touch Controls -->
+      <div class="mobile-controls">
+        <div class="controls-row top-row">
+          <button id="btn-hold" class="control-btn square">HOLD</button>
+          <button id="btn-rotate" class="control-btn circle">ROTATE</button>
+          <button id="btn-pause" class="control-btn square">PAUSE</button>
+        </div>
+        <div class="controls-row main-row">
+          <button id="btn-left" class="control-btn arrow">←</button>
+          <div class="center-buttons">
+            <button id="btn-hard" class="control-btn drop-btn">
+              HARD DROP
+            </button>
+            <button id="btn-down" class="control-btn drop-btn">
+              SOFT DROP
+            </button>
+          </div>
+          <button id="btn-right" class="control-btn arrow">→</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      class SoundFX {
+        constructor() {
+          this.ctx = null;
+          this.muted = false;
+        }
+
+        init() {
+          if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+        }
+
+        toggleMute() {
+          this.muted = !this.muted;
+          return this.muted;
+        }
+
+        playMove() {
+          if (this.muted) return;
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(
+            100,
+            this.ctx.currentTime + 0.08,
+          );
+          gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(
+            0.01,
+            this.ctx.currentTime + 0.08,
+          );
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.08);
+        }
+
+        playRotate() {
+          if (this.muted) return;
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(
+            300,
+            this.ctx.currentTime + 0.1,
+          );
+          gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(
+            0.01,
+            this.ctx.currentTime + 0.1,
+          );
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.1);
+        }
+
+        playLand() {
+          if (this.muted) return;
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(80, this.ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(
+            40,
+            this.ctx.currentTime + 0.12,
+          );
+          gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(
+            0.01,
+            this.ctx.currentTime + 0.12,
+          );
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.12);
+        }
+
+        playHardDrop() {
+          if (this.muted) return;
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(
+            30,
+            this.ctx.currentTime + 0.18,
+          );
+          gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(
+            0.01,
+            this.ctx.currentTime + 0.18,
+          );
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.18);
+        }
+
+        playLineClear() {
+          if (this.muted) return;
+          this.init();
+          const time = this.ctx.currentTime;
+          const freqs = [330, 440, 550];
+          freqs.forEach((f, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(f, time + idx * 0.05);
+            osc.frequency.exponentialRampToValueAtTime(
+              f * 1.5,
+              time + idx * 0.05 + 0.25,
+            );
+            gain.gain.setValueAtTime(0.0, time);
+            gain.gain.setValueAtTime(0.12, time + idx * 0.05);
+            gain.gain.exponentialRampToValueAtTime(
+              0.01,
+              time + idx * 0.05 + 0.25,
+            );
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(time + idx * 0.05);
+            osc.stop(time + idx * 0.05 + 0.25);
+          });
+        }
+
+        playLevelUp() {
+          if (this.muted) return;
+          this.init();
+          const now = this.ctx.currentTime;
+          const notes = [261.63, 329.63, 392.0, 523.25];
+          notes.forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = "square";
+            osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+            gain.gain.setValueAtTime(0.1, now + idx * 0.1);
+            gain.gain.exponentialRampToValueAtTime(
+              0.01,
+              now + idx * 0.1 + 0.15,
+            );
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now + idx * 0.1);
+            osc.stop(now + idx * 0.1 + 0.15);
+          });
+        }
+
+        playGameOver() {
+          if (this.muted) return;
+          this.init();
+          const now = this.ctx.currentTime;
+          const notes = [300, 220, 150, 100];
+          notes.forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = "sawtooth";
+            osc.frequency.setValueAtTime(freq, now + idx * 0.15);
+            gain.gain.setValueAtTime(0.15, now + idx * 0.15);
+            gain.gain.exponentialRampToValueAtTime(
+              0.01,
+              now + idx * 0.15 + 0.25,
+            );
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now + idx * 0.15);
+            osc.stop(now + idx * 0.15 + 0.25);
+          });
+        }
+      }
+
+      const sfx = new SoundFX();
+
+      const TETROMINOES = {
+        I: {
+          shape: [
+            [0, 0, 0, 0],
+            [1, 1, 1, 1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+          ],
+          color: 0x00f3ff,
+        },
+        O: {
+          shape: [
+            [1, 1],
+            [1, 1],
+          ],
+          color: 0xffd700,
+        },
+        T: {
+          shape: [
+            [0, 1, 0],
+            [1, 1, 1],
+            [0, 0, 0],
+          ],
+          color: 0x9b51e0,
+        },
+        S: {
+          shape: [
+            [0, 1, 1],
+            [1, 1, 0],
+            [0, 0, 0],
+          ],
+          color: 0x39ff14,
+        },
+        Z: {
+          shape: [
+            [1, 1, 0],
+            [0, 1, 1],
+            [0, 0, 0],
+          ],
+          color: 0xff0077,
+        },
+        J: {
+          shape: [
+            [1, 0, 0],
+            [1, 1, 1],
+            [0, 0, 0],
+          ],
+          color: 0x2f80ed,
+        },
+        L: {
+          shape: [
+            [0, 0, 1],
+            [1, 1, 1],
+            [0, 0, 0],
+          ],
+          color: 0xf2994a,
+        },
+      };
+
+      const WALL_KICKS = {
+        normal: {
+          "0->1": [
+            [0, 0],
+            [-1, 0],
+            [-1, 1],
+            [0, -2],
+            [-1, -2],
+          ],
+          "1->0": [
+            [0, 0],
+            [1, 0],
+            [1, -1],
+            [0, 2],
+            [1, 2],
+          ],
+          "1->2": [
+            [0, 0],
+            [1, 0],
+            [1, -1],
+            [0, 2],
+            [1, 2],
+          ],
+          "2->1": [
+            [0, 0],
+            [-1, 0],
+            [-1, 1],
+            [0, -2],
+            [-1, -2],
+          ],
+          "2->3": [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, -2],
+            [1, -2],
+          ],
+          "3->2": [
+            [0, 0],
+            [-1, 0],
+            [-1, -1],
+            [0, 2],
+            [-1, 2],
+          ],
+          "3->0": [
+            [0, 0],
+            [-1, 0],
+            [-1, -1],
+            [0, 2],
+            [-1, 2],
+          ],
+          "0->3": [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, -2],
+            [1, -2],
+          ],
+        },
+        I: {
+          "0->1": [
+            [0, 0],
+            [-2, 0],
+            [1, 0],
+            [-2, -1],
+            [1, 2],
+          ],
+          "1->0": [
+            [0, 0],
+            [2, 0],
+            [-1, 0],
+            [2, 1],
+            [-1, -2],
+          ],
+          "1->2": [
+            [0, 0],
+            [-1, 0],
+            [2, 0],
+            [-1, 2],
+            [2, -1],
+          ],
+          "2->1": [
+            [0, 0],
+            [1, 0],
+            [-2, 0],
+            [1, -2],
+            [-2, 1],
+          ],
+          "2->3": [
+            [0, 0],
+            [2, 0],
+            [-1, 0],
+            [2, 1],
+            [-1, -2],
+          ],
+          "3->2": [
+            [0, 0],
+            [-2, 0],
+            [1, 0],
+            [-2, -1],
+            [1, 2],
+          ],
+          "3->0": [
+            [0, 0],
+            [1, 0],
+            [-2, 0],
+            [1, -2],
+            [-2, 1],
+          ],
+          "0->3": [
+            [0, 0],
+            [-1, 0],
+            [2, 0],
+            [-1, 2],
+            [2, -1],
+          ],
+        },
+      };
+
+      const COLS = 10;
+      const ROWS = 20;
+
+      class Game {
+        constructor() {
+          this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+          this.score = 0;
+          this.highScore = parseInt(
+            localStorage.getItem("neon_tetris_high") || "0",
+            10,
+          );
+          this.level = 1;
+          this.lines = 0;
+          this.gameState = "start";
+
+          this.currentPiece = null;
+          this.currentX = 0;
+          this.currentY = 0;
+          this.currentRot = 0;
+
+          this.nextPieceType = "";
+          this.holdPieceType = "";
+          this.hasHeld = false;
+
+          this.dropTime = 1000;
+          this.lastTime = 0;
+          this.dropAccumulator = 0;
+
+          this.bag = [];
+
+          this.initUI();
+          this.initEngine3D();
+          this.resizeEngine();
+
+          window.addEventListener("resize", () => this.resizeEngine());
+          this.animate();
+        }
+
+        getRandomPieceType() {
+          if (this.bag.length === 0) {
+            this.bag = Object.keys(TETROMINOES);
+            for (let i = this.bag.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [this.bag[i], this.bag[j]] = [this.bag[j], this.bag[i]];
+            }
+          }
+          return this.bag.pop();
+        }
+
+        initUI() {
+          document
+            .getElementById("start-btn")
+            .addEventListener("click", () => this.startGame());
+          document
+            .getElementById("resume-btn")
+            .addEventListener("click", () => this.resumeGame());
+          document
+            .getElementById("restart-btn")
+            .addEventListener("click", () => this.startGame());
+          document
+            .getElementById("play-again-btn")
+            .addEventListener("click", () => this.startGame());
+
+          const muteBtn = document.getElementById("mute-btn");
+          muteBtn.addEventListener("click", () => {
+            const isMuted = sfx.toggleMute();
+            muteBtn.classList.toggle("muted", isMuted);
+          });
+
+          document
+            .getElementById("btn-left")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.moveLeft();
+            });
+          document
+            .getElementById("btn-right")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.moveRight();
+            });
+          document
+            .getElementById("btn-rotate")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.rotatePiece();
+            });
+          document
+            .getElementById("btn-down")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.softDropStart();
+            });
+          document
+            .getElementById("btn-down")
+            .addEventListener("touchend", (e) => {
+              e.preventDefault();
+              this.softDropEnd();
+            });
+          document
+            .getElementById("btn-hard")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.hardDrop();
+            });
+          document
+            .getElementById("btn-hold")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.holdPiece();
+            });
+          document
+            .getElementById("btn-pause")
+            .addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.togglePause();
+            });
+
+          window.addEventListener("keydown", (e) => {
+            if (this.gameState !== "playing") {
+              if (e.key === "p" || e.key === "P" || e.key === "Escape") {
+                if (this.gameState === "paused") this.resumeGame();
+              }
+              return;
+            }
+
+            switch (e.key) {
+              case "ArrowLeft":
+                this.moveLeft();
+                e.preventDefault();
+                break;
+              case "ArrowRight":
+                this.moveRight();
+                e.preventDefault();
+                break;
+              case "ArrowUp":
+                this.rotatePiece();
+                e.preventDefault();
+                break;
+              case "ArrowDown":
+                this.softDropStart();
+                e.preventDefault();
+                break;
+              case " ":
+                this.hardDrop();
+                e.preventDefault();
+                break;
+              case "Shift":
+              case "c":
+              case "C":
+                this.holdPiece();
+                e.preventDefault();
+                break;
+              case "p":
+              case "P":
+              case "Escape":
+                this.togglePause();
+                e.preventDefault();
+                break;
+            }
+          });
+
+          window.addEventListener("keyup", (e) => {
+            if (e.key === "ArrowDown") this.softDropEnd();
+          });
+
+          const holder = document.getElementById("canvas-holder");
+          let touchStartX = 0;
+          let touchStartY = 0;
+          holder.addEventListener(
+            "touchstart",
+            (e) => {
+              touchStartX = e.touches[0].clientX;
+              touchStartY = e.touches[0].clientY;
+            },
+            { passive: true },
+          );
+
+          holder.addEventListener(
+            "touchend",
+            (e) => {
+              if (this.gameState !== "playing") return;
+              const diffX = e.changedTouches[0].clientX - touchStartX;
+              const diffY = e.changedTouches[0].clientY - touchStartY;
+
+              if (Math.abs(diffX) > Math.abs(diffY)) {
+                if (Math.abs(diffX) > 40) {
+                  if (diffX > 0) this.moveRight();
+                  else this.moveLeft();
+                }
+              } else {
+                if (Math.abs(diffY) > 40) {
+                  if (diffY > 0) this.softDropStart();
+                  else this.rotatePiece();
+                }
+              }
+            },
+            { passive: true },
+          );
+        }
+
+        initEngine3D() {
+          const holder = document.getElementById("canvas-holder");
+
+          this.scene = new THREE.Scene();
+          this.scene.fog = new THREE.FogExp2(0x03030c, 0.02);
+
+          this.camera = new THREE.PerspectiveCamera(
+            45,
+            holder.clientWidth / holder.clientHeight,
+            0.1,
+            100,
+          );
+          this.camera.position.set(0, 4, 18);
+          this.camera.lookAt(0, -1, 0);
+
+          this.renderer = new THREE.WebGLRenderer({ antialias: true });
+          this.renderer.setSize(holder.clientWidth, holder.clientHeight);
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          this.renderer.shadowMap.enabled = true;
+          holder.appendChild(this.renderer.domElement);
+
+          const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+          this.scene.add(ambientLight);
+
+          const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+          dirLight.position.set(5, 15, 7);
+          this.scene.add(dirLight);
+
+          const cageGeo = new THREE.BoxGeometry(COLS, ROWS, 1);
+          const cageEdges = new THREE.EdgesGeometry(cageGeo);
+          const cageMat = new THREE.LineBasicMaterial({
+            color: 0x00f3ff,
+            linewidth: 2,
+          });
+          this.cageLine = new THREE.LineSegments(cageEdges, cageMat);
+          this.cageLine.position.set(0, 0, 0);
+          this.scene.add(this.cageLine);
+
+          const backGeo = new THREE.PlaneGeometry(COLS, ROWS);
+          const backMat = new THREE.MeshBasicMaterial({
+            color: 0x0a0a19,
+            transparent: true,
+            opacity: 0.8,
+          });
+          const backPlane = new THREE.Mesh(backGeo, backMat);
+          backPlane.position.set(0, 0, -0.5);
+          this.scene.add(backPlane);
+
+          const gridHelper = new THREE.GridHelper(40, 40, 0xff0077, 0x00f3ff);
+          gridHelper.position.y = -ROWS / 2 - 0.01;
+          this.scene.add(gridHelper);
+
+          this.gridMeshes = Array.from({ length: ROWS }, () =>
+            Array(COLS).fill(null),
+          );
+          this.activeMeshGroup = new THREE.Group();
+          this.scene.add(this.activeMeshGroup);
+
+          this.initPreviews();
+        }
+
+        initPreviews() {
+          this.nextRenderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true,
+          });
+          this.nextScene = new THREE.Scene();
+          this.nextCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 10);
+          this.nextCamera.position.set(0, 0, 5);
+
+          this.holdRenderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true,
+          });
+          this.holdScene = new THREE.Scene();
+          this.holdCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 10);
+          this.holdCamera.position.set(0, 0, 5);
+
+          const nextBox = document.getElementById("next-preview");
+          const holdBox = document.getElementById("hold-preview");
+
+          this.nextRenderer.setSize(nextBox.clientWidth, nextBox.clientHeight);
+          nextBox.appendChild(this.nextRenderer.domElement);
+
+          this.holdRenderer.setSize(holdBox.clientWidth, holdBox.clientHeight);
+          holdBox.appendChild(this.holdRenderer.domElement);
+
+          const l1 = new THREE.DirectionalLight(0xffffff, 0.8);
+          l1.position.set(2, 2, 4);
+          const l2 = l1.clone();
+          this.nextScene.add(l1);
+          this.holdScene.add(l2);
+
+          this.nextScene.add(new THREE.AmbientLight(0xffffff, 0.3));
+          this.holdScene.add(new THREE.AmbientLight(0xffffff, 0.3));
+        }
+
+        resizeEngine() {
+          const holder = document.getElementById("canvas-holder");
+          this.camera.aspect = holder.clientWidth / holder.clientHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(holder.clientWidth, holder.clientHeight);
+
+          const nextBox = document.getElementById("next-preview");
+          const holdBox = document.getElementById("hold-preview");
+          if (nextBox.clientWidth > 0) {
+            this.nextRenderer.setSize(
+              nextBox.clientWidth,
+              nextBox.clientHeight,
+            );
+            this.holdRenderer.setSize(
+              holdBox.clientWidth,
+              holdBox.clientHeight,
+            );
+          }
+        }
+
+        createBlockMesh(color) {
+          const geometry = new THREE.BoxGeometry(0.92, 0.92, 0.92);
+          const material = new THREE.MeshPhongMaterial({
+            color: color,
+            shininess: 80,
+            specular: 0xffffff,
+            emissive: color,
+            emissiveIntensity: 0.3,
+          });
+          const block = new THREE.Mesh(geometry, material);
+          const edgeGeo = new THREE.EdgesGeometry(geometry);
+          const edgeMat = new THREE.LineBasicMaterial({
+            color: 0xffffff,
+            linewidth: 1.5,
+          });
+          const wireframe = new THREE.LineSegments(edgeGeo, edgeMat);
+          block.add(wireframe);
+          return block;
+        }
+
+        updateHUD() {
+          document.getElementById("score-val").textContent = String(
+            this.score,
+          ).padStart(6, "0");
+          document.getElementById("highscore-val").textContent = String(
+            this.highScore,
+          ).padStart(6, "0");
+          document.getElementById("level-val").textContent = this.level;
+          document.getElementById("lines-val").textContent = this.lines;
+        }
+
+        startGame() {
+          sfx.init();
+          document.getElementById("start-overlay").classList.remove("active");
+          document.getElementById("pause-overlay").classList.remove("active");
+          document
+            .getElementById("gameover-overlay")
+            .classList.remove("active");
+
+          this.score = 0;
+          this.level = 1;
+          this.lines = 0;
+          this.dropTime = 1000;
+          this.bag = [];
+          this.updateHUD();
+
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              this.grid[r][c] = 0;
+              if (this.gridMeshes[r][c]) {
+                this.scene.remove(this.gridMeshes[r][c]);
+                this.gridMeshes[r][c] = null;
+              }
+            }
+          }
+
+          this.holdPieceType = "";
+          this.hasHeld = false;
+          this.nextPieceType = this.getRandomPieceType();
+
+          this.spawnPiece();
+          this.gameState = "playing";
+          this.lastTime = performance.now();
+        }
+
+        togglePause() {
+          if (this.gameState === "playing") {
+            this.gameState = "paused";
+            document.getElementById("pause-overlay").classList.add("active");
+          } else if (this.gameState === "paused") {
+            this.resumeGame();
+          }
+        }
+
+        resumeGame() {
+          document.getElementById("pause-overlay").classList.remove("active");
+          this.gameState = "playing";
+          this.lastTime = performance.now();
+        }
+
+        spawnPiece() {
+          this.currentPieceType = this.nextPieceType;
+          this.nextPieceType = this.getRandomPieceType();
+          this.currentX = Math.floor(
+            (COLS - TETROMINOES[this.currentPieceType].shape[0].length) / 2,
+          );
+          this.currentY = 0;
+          this.currentRot = 0;
+          this.hasHeld = false;
+
+          if (
+            this.checkCollision(this.currentX, this.currentY, this.getShape())
+          ) {
+            this.gameOver();
+            return;
+          }
+
+          this.updateActivePieceMesh();
+          this.updatePreviewPanels();
+        }
+
+        gameOver() {
+          this.gameState = "gameover";
+          sfx.playGameOver();
+          if (this.score > this.highScore) {
+            this.highScore = this.score;
+            localStorage.setItem("neon_tetris_high", this.score);
+          }
+          document.getElementById("final-score").textContent = this.score;
+          document.getElementById("final-level").textContent = this.level;
+          document.getElementById("final-lines").textContent = this.lines;
+          document.getElementById("gameover-overlay").classList.add("active");
+        }
+
+        getShape() {
+          return TETROMINOES[this.currentPieceType].shape;
+        }
+
+        checkCollision(ax, ay, shape) {
+          for (let r = 0; r < shape.length; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+              if (shape[r][c]) {
+                const targetX = ax + c;
+                const targetY = ay + r;
+                if (targetX < 0 || targetX >= COLS || targetY >= ROWS) {
+                  return true;
+                }
+                if (targetY >= 0 && this.grid[targetY][targetX]) {
+                  return true;
+                }
+              }
+            }
+          }
+          return false;
+        }
+
+        moveLeft() {
+          if (
+            !this.checkCollision(
+              this.currentX - 1,
+              this.currentY,
+              this.getShape(),
+            )
+          ) {
+            this.currentX--;
+            this.updateActivePieceMesh();
+            sfx.playMove();
+          }
+        }
+
+        moveRight() {
+          if (
+            !this.checkCollision(
+              this.currentX + 1,
+              this.currentY,
+              this.getShape(),
+            )
+          ) {
+            this.currentX++;
+            this.updateActivePieceMesh();
+            sfx.playMove();
+          }
+        }
+
+        softDropStart() {
+          this.isSoftDropping = true;
+        }
+
+        softDropEnd() {
+          this.isSoftDropping = false;
+        }
+
+        hardDrop() {
+          let drops = 0;
+          while (
+            !this.checkCollision(
+              this.currentX,
+              this.currentY + 1,
+              this.getShape(),
+            )
+          ) {
+            this.currentY++;
+            drops++;
+          }
+          this.score += drops * 2;
+          this.lockPiece();
+          sfx.playHardDrop();
+        }
+
+        rotatePiece() {
+          const currentShape = this.getShape();
+          const nextRot = (this.currentRot + 1) % 4;
+          const N = currentShape.length;
+          const rotated = Array.from({ length: N }, () => Array(N).fill(0));
+          for (let r = 0; r < N; r++) {
+            for (let c = 0; c < N; c++) {
+              rotated[c][N - 1 - r] = currentShape[r][c];
+            }
+          }
+
+          const kickType = this.currentPieceType === "I" ? "I" : "normal";
+          const transitionKey = `${this.currentRot}->${nextRot}`;
+          const kicks = WALL_KICKS[kickType][transitionKey] || [[0, 0]];
+
+          for (let i = 0; i < kicks.length; i++) {
+            const [kx, ky] = kicks[i];
+            const tryX = this.currentX + kx;
+            const tryY = this.currentY - ky;
+
+            if (!this.checkCollision(tryX, tryY, rotated)) {
+              this.currentX = tryX;
+              this.currentY = tryY;
+              this.currentRot = nextRot;
+              TETROMINOES[this.currentPieceType].shape = rotated;
+              this.updateActivePieceMesh();
+              sfx.playRotate();
+              return;
+            }
+          }
+        }
+
+        holdPiece() {
+          if (this.hasHeld) return;
+          sfx.playRotate();
+          const prevHold = this.holdPieceType;
+          this.holdPieceType = this.currentPieceType;
+          TETROMINOES[this.holdPieceType].shape = this.getDefaultShape(
+            this.holdPieceType,
+          );
+
+          if (prevHold) {
+            this.currentPieceType = prevHold;
+            this.currentX = Math.floor(
+              (COLS - TETROMINOES[this.currentPieceType].shape[0].length) / 2,
+            );
+            this.currentY = 0;
+            this.currentRot = 0;
+            this.updateActivePieceMesh();
+          } else {
+            this.spawnPiece();
+          }
+          this.hasHeld = true;
+          this.updatePreviewPanels();
+        }
+
+        getDefaultShape(type) {
+          const raw = {
+            I: [
+              [0, 0, 0, 0],
+              [1, 1, 1, 1],
+              [0, 0, 0, 0],
+              [0, 0, 0, 0],
+            ],
+            O: [
+              [1, 1],
+              [1, 1],
+            ],
+            T: [
+              [0, 1, 0],
+              [1, 1, 1],
+              [0, 0, 0],
+            ],
+            S: [
+              [0, 1, 1],
+              [1, 1, 0],
+              [0, 0, 0],
+            ],
+            Z: [
+              [1, 1, 0],
+              [0, 1, 1],
+              [0, 0, 0],
+            ],
+            J: [
+              [1, 0, 0],
+              [1, 1, 1],
+              [0, 0, 0],
+            ],
+            L: [
+              [0, 0, 1],
+              [1, 1, 1],
+              [0, 0, 0],
+            ],
+          };
+          return raw[type];
+        }
+
+        lockPiece() {
+          const shape = this.getShape();
+          const color = TETROMINOES[this.currentPieceType].color;
+
+          for (let r = 0; r < shape.length; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+              if (shape[r][c]) {
+                const gridX = this.currentX + c;
+                const gridY = this.currentY + r;
+                if (gridY >= 0) {
+                  this.grid[gridY][gridX] = color;
+                  const staticMesh = this.createBlockMesh(color);
+                  staticMesh.position.set(
+                    gridX - COLS / 2 + 0.5,
+                    -gridY + ROWS / 2 - 0.5,
+                    0,
+                  );
+                  this.scene.add(staticMesh);
+                  this.gridMeshes[gridY][gridX] = staticMesh;
+                }
+              }
+            }
+          }
+          sfx.playLand();
+          this.clearLines();
+          this.spawnPiece();
+        }
+
+        clearLines() {
+          let linesClearedNow = 0;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            const isComplete = this.grid[r].every((val) => val !== 0);
+            if (isComplete) {
+              linesClearedNow++;
+              for (let c = 0; c < COLS; c++) {
+                const mesh = this.gridMeshes[r][c];
+                if (mesh) this.scene.remove(mesh);
+              }
+              this.grid.splice(r, 1);
+              this.gridMeshes.splice(r, 1);
+              this.grid.unshift(Array(COLS).fill(0));
+              this.gridMeshes.unshift(Array(COLS).fill(null));
+              r++;
+            }
+          }
+
+          if (linesClearedNow > 0) {
+            sfx.playLineClear();
+            this.lines += linesClearedNow;
+            const basePoints = [0, 100, 300, 500, 800];
+            this.score += basePoints[linesClearedNow] * this.level;
+            const nextLevel = Math.floor(this.lines / 10) + 1;
+            if (nextLevel > this.level) {
+              this.level = nextLevel;
+              sfx.playLevelUp();
+              this.dropTime = Math.max(100, 1000 - (this.level - 1) * 90);
+            }
+            this.updateHUD();
+            this.repositionGridMeshes();
+          }
+        }
+
+        repositionGridMeshes() {
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              const mesh = this.gridMeshes[r][c];
+              if (mesh) mesh.position.y = -r + ROWS / 2 - 0.5;
+            }
+          }
+        }
+
+        updateActivePieceMesh() {
+          while (this.activeMeshGroup.children.length > 0) {
+            this.activeMeshGroup.remove(this.activeMeshGroup.children[0]);
+          }
+          const shape = this.getShape();
+          const color = TETROMINOES[this.currentPieceType].color;
+          for (let r = 0; r < shape.length; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+              if (shape[r][c]) {
+                const mesh = this.createBlockMesh(color);
+                mesh.position.set(c, -r, 0);
+                this.activeMeshGroup.add(mesh);
+              }
+            }
+          }
+          this.activeMeshGroup.position.set(
+            this.currentX - COLS / 2 + 0.5,
+            -this.currentY + ROWS / 2 - 0.5,
+            0,
+          );
+        }
+
+        updatePreviewPanels() {
+          while (this.nextScene.children.length > 2)
+            this.nextScene.remove(this.nextScene.children[2]);
+          while (this.holdScene.children.length > 2)
+            this.holdScene.remove(this.holdScene.children[2]);
+          if (this.nextPieceType) {
+            this.nextScene.add(this.createPreviewGroup(this.nextPieceType));
+          }
+          if (this.holdPieceType) {
+            this.holdScene.add(this.createPreviewGroup(this.holdPieceType));
+          }
+        }
+
+        createPreviewGroup(type) {
+          const group = new THREE.Group();
+          const shape = TETROMINOES[type].shape;
+          const color = TETROMINOES[type].color;
+          const size = shape.length;
+          const offsetX = -size / 2 + 0.5;
+          const offsetY = size / 2 - 0.5;
+          for (let r = 0; r < size; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+              if (shape[r][c]) {
+                const mesh = this.createBlockMesh(color);
+                mesh.position.set(c + offsetX, -r + offsetY, 0);
+                group.add(mesh);
+              }
+            }
+          }
+          group.scale.set(0.7, 0.7, 0.7);
+          return group;
+        }
+
+        animate() {
+          requestAnimationFrame(() => this.animate());
+          const now = performance.now();
+          const delta = now - this.lastTime;
+          this.lastTime = now;
+          if (this.gameState === "playing") {
+            this.dropAccumulator += delta;
+            const currentDropSpeed = this.isSoftDropping ? 50 : this.dropTime;
+            if (this.dropAccumulator >= currentDropSpeed) {
+              this.dropAccumulator = 0;
+              if (
+                !this.checkCollision(
+                  this.currentX,
+                  this.currentY + 1,
+                  this.getShape(),
+                )
+              ) {
+                this.currentY++;
+                this.updateActivePieceMesh();
+              } else {
+                this.lockPiece();
+              }
+            }
+            const targetCamX = (this.currentX - COLS / 2) * 0.15;
+            this.camera.position.x +=
+              (targetCamX - this.camera.position.x) * 0.05;
+          }
+          this.renderer.render(this.scene, this.camera);
+          this.nextRenderer.render(this.nextScene, this.nextCamera);
+          this.holdRenderer.render(this.holdScene, this.holdCamera);
+        }
+      }
+
+      window.addEventListener("DOMContentLoaded", () => {
+        new Game();
+      });
+    </script>
+  </body>
+</html>
