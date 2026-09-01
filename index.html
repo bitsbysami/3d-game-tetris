@@ -607,7 +607,7 @@
           <svg id="volume-icon" viewBox="0 0 24 24" width="24" height="24">
             <path
               fill="currentColor"
-              d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.07,19.86 21,16.28 21,12C21,7.72 18.07,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.77 16.5,12M3,9V15H7L12,20V4L7,9H3Z"
+              d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.07,19.86 21,16.28 21,12C21,7.72 18.07,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.87 16.5,12Z"
             />
           </svg>
         </button>
@@ -998,30 +998,16 @@
           "2->3": [
             [0, 0],
             [1, 0],
-            [1, 1],
-            [0, -2],
-            [1, -2],
+            [1, -1],
+            [0, 2],
+            [1, 2],
           ],
           "3->2": [
             [0, 0],
             [-1, 0],
-            [-1, -1],
-            [0, 2],
-            [-1, 2],
-          ],
-          "3->0": [
-            [0, 0],
-            [-1, 0],
-            [-1, -1],
-            [0, 2],
-            [-1, 2],
-          ],
-          "0->3": [
-            [0, 0],
-            [1, 0],
-            [1, 1],
+            [-1, 1],
             [0, -2],
-            [1, -2],
+            [-1, -2],
           ],
         },
         I: {
@@ -1067,788 +1053,586 @@
             [-2, -1],
             [1, 2],
           ],
-          "3->0": [
-            [0, 0],
-            [1, 0],
-            [-2, 0],
-            [1, -2],
-            [-2, 1],
-          ],
-          "0->3": [
-            [0, 0],
-            [-1, 0],
-            [2, 0],
-            [-1, 2],
-            [2, -1],
-          ],
         },
       };
 
+      // Game state and control tracking
+      const keys = {};
+      const mobileControlState = {
+        left: false,
+        right: false,
+        down: false,
+        hard: false,
+        rotate: false,
+        hold: false,
+        pause: false,
+      };
+
+      let gameRunning = false;
+      let gamePaused = false;
+
+      // Canvas setup
+      const container = document.getElementById("canvas-holder");
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0a0a19);
+
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+      camera.position.z = 12;
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(width, height);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+      container.appendChild(renderer.domElement);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0x00f3ff, 0.4);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0x00f3ff, 1);
+      directionalLight.position.set(10, 10, 10);
+      directionalLight.castShadow = true;
+      directionalLight.shadow.camera.left = -15;
+      directionalLight.shadow.camera.right = 15;
+      directionalLight.shadow.camera.top = 15;
+      directionalLight.shadow.camera.bottom = -15;
+      scene.add(directionalLight);
+
+      const pointLight = new THREE.PointLight(0xff0077, 0.8);
+      pointLight.position.set(-10, -10, 5);
+      scene.add(pointLight);
+
+      // Game board
       const COLS = 10;
       const ROWS = 20;
+      const boardData = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
 
-      class Game {
-        constructor() {
-          this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-          this.score = 0;
-          this.highScore = parseInt(
-            localStorage.getItem("neon_tetris_high") || "0",
-            10,
-          );
-          this.level = 1;
-          this.lines = 0;
-          this.gameState = "start";
+      // Tetromino management
+      let currentPiece = null;
+      let nextPiece = null;
+      let holdPiece = null;
+      let canHold = true;
+      let lastDropTime = 0;
+      let dropInterval = 800;
+      let score = 0;
+      let lines = 0;
+      let level = 1;
+      let highScore = localStorage.getItem("tetris-highscore") || 0;
 
-          this.currentPiece = null;
-          this.currentX = 0;
-          this.currentY = 0;
-          this.currentRot = 0;
+      function randomTetromino() {
+        const pieces = Object.keys(TETROMINOES);
+        return TETROMINOES[pieces[Math.floor(Math.random() * pieces.length)]];
+      }
 
-          this.nextPieceType = "";
-          this.holdPieceType = "";
-          this.hasHeld = false;
-
-          this.dropTime = 1000;
-          this.lastTime = 0;
-          this.dropAccumulator = 0;
-
-          this.bag = [];
-
-          this.initUI();
-          this.initEngine3D();
-          this.resizeEngine();
-
-          window.addEventListener("resize", () => this.resizeEngine());
-          this.animate();
+      class Tetromino {
+        constructor(shape, color) {
+          this.shape = JSON.parse(JSON.stringify(shape));
+          this.color = color;
+          this.x = Math.floor(COLS / 2) - Math.floor(this.shape[0].length / 2);
+          this.y = 0;
+          this.rotation = 0;
+          this.mesh = this.createMesh();
         }
 
-        getRandomPieceType() {
-          if (this.bag.length === 0) {
-            this.bag = Object.keys(TETROMINOES);
-            for (let i = this.bag.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [this.bag[i], this.bag[j]] = [this.bag[j], this.bag[i]];
+        createMesh() {
+          const group = new THREE.Group();
+          this.shape.forEach((row, y) => {
+            row.forEach((cell, x) => {
+              if (cell) {
+                const geometry = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+                const material = new THREE.MeshStandardMaterial({
+                  color: this.color,
+                  metalness: 0.6,
+                  roughness: 0.4,
+                  emissive: this.color,
+                  emissiveIntensity: 0.3,
+                });
+                const box = new THREE.Mesh(geometry, material);
+                box.position.set(x - 1.5, -y + 1.5, 0);
+                box.castShadow = true;
+                group.add(box);
+              }
+            });
+          });
+          return group;
+        }
+
+        rotate() {
+          const n = this.shape.length;
+          const rotated = Array(n)
+            .fill()
+            .map(() => Array(n).fill(0));
+          for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+              rotated[j][n - 1 - i] = this.shape[i][j];
             }
           }
-          return this.bag.pop();
+          return rotated;
         }
 
-        initUI() {
-          document
-            .getElementById("start-btn")
-            .addEventListener("click", () => this.startGame());
-          document
-            .getElementById("resume-btn")
-            .addEventListener("click", () => this.resumeGame());
-          document
-            .getElementById("restart-btn")
-            .addEventListener("click", () => this.startGame());
-          document
-            .getElementById("play-again-btn")
-            .addEventListener("click", () => this.startGame());
-
-          const muteBtn = document.getElementById("mute-btn");
-          muteBtn.addEventListener("click", () => {
-            const isMuted = sfx.toggleMute();
-            muteBtn.classList.toggle("muted", isMuted);
-          });
-
-          document
-            .getElementById("btn-left")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.moveLeft();
-            });
-          document
-            .getElementById("btn-right")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.moveRight();
-            });
-          document
-            .getElementById("btn-rotate")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.rotatePiece();
-            });
-          document
-            .getElementById("btn-down")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.softDropStart();
-            });
-          document
-            .getElementById("btn-down")
-            .addEventListener("touchend", (e) => {
-              e.preventDefault();
-              this.softDropEnd();
-            });
-          document
-            .getElementById("btn-hard")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.hardDrop();
-            });
-          document
-            .getElementById("btn-hold")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.holdPiece();
-            });
-          document
-            .getElementById("btn-pause")
-            .addEventListener("touchstart", (e) => {
-              e.preventDefault();
-              this.togglePause();
-            });
-
-          window.addEventListener("keydown", (e) => {
-            if (this.gameState !== "playing") {
-              if (e.key === "p" || e.key === "P" || e.key === "Escape") {
-                if (this.gameState === "paused") this.resumeGame();
-              }
-              return;
-            }
-
-            switch (e.key) {
-              case "ArrowLeft":
-                this.moveLeft();
-                e.preventDefault();
-                break;
-              case "ArrowRight":
-                this.moveRight();
-                e.preventDefault();
-                break;
-              case "ArrowUp":
-                this.rotatePiece();
-                e.preventDefault();
-                break;
-              case "ArrowDown":
-                this.softDropStart();
-                e.preventDefault();
-                break;
-              case " ":
-                this.hardDrop();
-                e.preventDefault();
-                break;
-              case "Shift":
-              case "c":
-              case "C":
-                this.holdPiece();
-                e.preventDefault();
-                break;
-              case "p":
-              case "P":
-              case "Escape":
-                this.togglePause();
-                e.preventDefault();
-                break;
-            }
-          });
-
-          window.addEventListener("keyup", (e) => {
-            if (e.key === "ArrowDown") this.softDropEnd();
-          });
-
-          const holder = document.getElementById("canvas-holder");
-          let touchStartX = 0;
-          let touchStartY = 0;
-          holder.addEventListener(
-            "touchstart",
-            (e) => {
-              touchStartX = e.touches[0].clientX;
-              touchStartY = e.touches[0].clientY;
-            },
-            { passive: true },
-          );
-
-          holder.addEventListener(
-            "touchend",
-            (e) => {
-              if (this.gameState !== "playing") return;
-              const diffX = e.changedTouches[0].clientX - touchStartX;
-              const diffY = e.changedTouches[0].clientY - touchStartY;
-
-              if (Math.abs(diffX) > Math.abs(diffY)) {
-                if (Math.abs(diffX) > 40) {
-                  if (diffX > 0) this.moveRight();
-                  else this.moveLeft();
-                }
-              } else {
-                if (Math.abs(diffY) > 40) {
-                  if (diffY > 0) this.softDropStart();
-                  else this.rotatePiece();
-                }
-              }
-            },
-            { passive: true },
-          );
-        }
-
-        initEngine3D() {
-          const holder = document.getElementById("canvas-holder");
-
-          this.scene = new THREE.Scene();
-          this.scene.fog = new THREE.FogExp2(0x03030c, 0.02);
-
-          this.camera = new THREE.PerspectiveCamera(
-            45,
-            holder.clientWidth / holder.clientHeight,
-            0.1,
-            100,
-          );
-          this.camera.position.set(0, 4, 18);
-          this.camera.lookAt(0, -1, 0);
-
-          this.renderer = new THREE.WebGLRenderer({ antialias: true });
-          this.renderer.setSize(holder.clientWidth, holder.clientHeight);
-          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-          this.renderer.shadowMap.enabled = true;
-          holder.appendChild(this.renderer.domElement);
-
-          const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
-          this.scene.add(ambientLight);
-
-          const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-          dirLight.position.set(5, 15, 7);
-          this.scene.add(dirLight);
-
-          const cageGeo = new THREE.BoxGeometry(COLS, ROWS, 1);
-          const cageEdges = new THREE.EdgesGeometry(cageGeo);
-          const cageMat = new THREE.LineBasicMaterial({
-            color: 0x00f3ff,
-            linewidth: 2,
-          });
-          this.cageLine = new THREE.LineSegments(cageEdges, cageMat);
-          this.cageLine.position.set(0, 0, 0);
-          this.scene.add(this.cageLine);
-
-          const backGeo = new THREE.PlaneGeometry(COLS, ROWS);
-          const backMat = new THREE.MeshBasicMaterial({
-            color: 0x0a0a19,
-            transparent: true,
-            opacity: 0.8,
-          });
-          const backPlane = new THREE.Mesh(backGeo, backMat);
-          backPlane.position.set(0, 0, -0.5);
-          this.scene.add(backPlane);
-
-          const gridHelper = new THREE.GridHelper(40, 40, 0xff0077, 0x00f3ff);
-          gridHelper.position.y = -ROWS / 2 - 0.01;
-          this.scene.add(gridHelper);
-
-          this.gridMeshes = Array.from({ length: ROWS }, () =>
-            Array(COLS).fill(null),
-          );
-          this.activeMeshGroup = new THREE.Group();
-          this.scene.add(this.activeMeshGroup);
-
-          this.initPreviews();
-        }
-
-        initPreviews() {
-          this.nextRenderer = new THREE.WebGLRenderer({
-            antialias: true,
-            alpha: true,
-          });
-          this.nextScene = new THREE.Scene();
-          this.nextCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 10);
-          this.nextCamera.position.set(0, 0, 5);
-
-          this.holdRenderer = new THREE.WebGLRenderer({
-            antialias: true,
-            alpha: true,
-          });
-          this.holdScene = new THREE.Scene();
-          this.holdCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 10);
-          this.holdCamera.position.set(0, 0, 5);
-
-          const nextBox = document.getElementById("next-preview");
-          const holdBox = document.getElementById("hold-preview");
-
-          this.nextRenderer.setSize(nextBox.clientWidth, nextBox.clientHeight);
-          nextBox.appendChild(this.nextRenderer.domElement);
-
-          this.holdRenderer.setSize(holdBox.clientWidth, holdBox.clientHeight);
-          holdBox.appendChild(this.holdRenderer.domElement);
-
-          const l1 = new THREE.DirectionalLight(0xffffff, 0.8);
-          l1.position.set(2, 2, 4);
-          const l2 = l1.clone();
-          this.nextScene.add(l1);
-          this.holdScene.add(l2);
-
-          this.nextScene.add(new THREE.AmbientLight(0xffffff, 0.3));
-          this.holdScene.add(new THREE.AmbientLight(0xffffff, 0.3));
-        }
-
-        resizeEngine() {
-          const holder = document.getElementById("canvas-holder");
-          this.camera.aspect = holder.clientWidth / holder.clientHeight;
-          this.camera.updateProjectionMatrix();
-          this.renderer.setSize(holder.clientWidth, holder.clientHeight);
-
-          const nextBox = document.getElementById("next-preview");
-          const holdBox = document.getElementById("hold-preview");
-          if (nextBox.clientWidth > 0) {
-            this.nextRenderer.setSize(
-              nextBox.clientWidth,
-              nextBox.clientHeight,
-            );
-            this.holdRenderer.setSize(
-              holdBox.clientWidth,
-              holdBox.clientHeight,
-            );
-          }
-        }
-
-        createBlockMesh(color) {
-          const geometry = new THREE.BoxGeometry(0.92, 0.92, 0.92);
-          const material = new THREE.MeshPhongMaterial({
-            color: color,
-            shininess: 80,
-            specular: 0xffffff,
-            emissive: color,
-            emissiveIntensity: 0.3,
-          });
-          const block = new THREE.Mesh(geometry, material);
-          const edgeGeo = new THREE.EdgesGeometry(geometry);
-          const edgeMat = new THREE.LineBasicMaterial({
-            color: 0xffffff,
-            linewidth: 1.5,
-          });
-          const wireframe = new THREE.LineSegments(edgeGeo, edgeMat);
-          block.add(wireframe);
-          return block;
-        }
-
-        updateHUD() {
-          document.getElementById("score-val").textContent = String(
-            this.score,
-          ).padStart(6, "0");
-          document.getElementById("highscore-val").textContent = String(
-            this.highScore,
-          ).padStart(6, "0");
-          document.getElementById("level-val").textContent = this.level;
-          document.getElementById("lines-val").textContent = this.lines;
-        }
-
-        startGame() {
-          sfx.init();
-          document.getElementById("start-overlay").classList.remove("active");
-          document.getElementById("pause-overlay").classList.remove("active");
-          document
-            .getElementById("gameover-overlay")
-            .classList.remove("active");
-
-          this.score = 0;
-          this.level = 1;
-          this.lines = 0;
-          this.dropTime = 1000;
-          this.bag = [];
-          this.updateHUD();
-
-          for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-              this.grid[r][c] = 0;
-              if (this.gridMeshes[r][c]) {
-                this.scene.remove(this.gridMeshes[r][c]);
-                this.gridMeshes[r][c] = null;
-              }
-            }
-          }
-
-          this.holdPieceType = "";
-          this.hasHeld = false;
-          this.nextPieceType = this.getRandomPieceType();
-
-          this.spawnPiece();
-          this.gameState = "playing";
-          this.lastTime = performance.now();
-        }
-
-        togglePause() {
-          if (this.gameState === "playing") {
-            this.gameState = "paused";
-            document.getElementById("pause-overlay").classList.add("active");
-          } else if (this.gameState === "paused") {
-            this.resumeGame();
-          }
-        }
-
-        resumeGame() {
-          document.getElementById("pause-overlay").classList.remove("active");
-          this.gameState = "playing";
-          this.lastTime = performance.now();
-        }
-
-        spawnPiece() {
-          this.currentPieceType = this.nextPieceType;
-          this.nextPieceType = this.getRandomPieceType();
-          this.currentX = Math.floor(
-            (COLS - TETROMINOES[this.currentPieceType].shape[0].length) / 2,
-          );
-          this.currentY = 0;
-          this.currentRot = 0;
-          this.hasHeld = false;
-
-          if (
-            this.checkCollision(this.currentX, this.currentY, this.getShape())
-          ) {
-            this.gameOver();
-            return;
-          }
-
-          this.updateActivePieceMesh();
-          this.updatePreviewPanels();
-        }
-
-        gameOver() {
-          this.gameState = "gameover";
-          sfx.playGameOver();
-          if (this.score > this.highScore) {
-            this.highScore = this.score;
-            localStorage.setItem("neon_tetris_high", this.score);
-          }
-          document.getElementById("final-score").textContent = this.score;
-          document.getElementById("final-level").textContent = this.level;
-          document.getElementById("final-lines").textContent = this.lines;
-          document.getElementById("gameover-overlay").classList.add("active");
-        }
-
-        getShape() {
-          return TETROMINOES[this.currentPieceType].shape;
-        }
-
-        checkCollision(ax, ay, shape) {
-          for (let r = 0; r < shape.length; r++) {
-            for (let c = 0; c < shape[r].length; c++) {
-              if (shape[r][c]) {
-                const targetX = ax + c;
-                const targetY = ay + r;
-                if (targetX < 0 || targetX >= COLS || targetY >= ROWS) {
-                  return true;
-                }
-                if (targetY >= 0 && this.grid[targetY][targetX]) {
-                  return true;
-                }
-              }
+        canRotate() {
+          const rotated = this.rotate();
+          const testRotations = WALL_KICKS[this.shape.length === 4 ? "I" : "normal"][
+            `${this.rotation}->` +
+              ((this.rotation + 1) % (this.shape.length === 2 ? 1 : 4))
+          ];
+          for (const [offsetX, offsetY] of testRotations) {
+            if (this.isValidPosition(rotated, this.x + offsetX, this.y + offsetY)) {
+              this.x += offsetX;
+              this.y += offsetY;
+              this.shape = rotated;
+              this.rotation = (this.rotation + 1) % (this.shape.length === 2 ? 1 : 4);
+              this.updateMesh();
+              return true;
             }
           }
           return false;
         }
 
-        moveLeft() {
-          if (
-            !this.checkCollision(
-              this.currentX - 1,
-              this.currentY,
-              this.getShape(),
-            )
-          ) {
-            this.currentX--;
-            this.updateActivePieceMesh();
-            sfx.playMove();
-          }
-        }
-
-        moveRight() {
-          if (
-            !this.checkCollision(
-              this.currentX + 1,
-              this.currentY,
-              this.getShape(),
-            )
-          ) {
-            this.currentX++;
-            this.updateActivePieceMesh();
-            sfx.playMove();
-          }
-        }
-
-        softDropStart() {
-          this.isSoftDropping = true;
-        }
-
-        softDropEnd() {
-          this.isSoftDropping = false;
-        }
-
-        hardDrop() {
-          let drops = 0;
-          while (
-            !this.checkCollision(
-              this.currentX,
-              this.currentY + 1,
-              this.getShape(),
-            )
-          ) {
-            this.currentY++;
-            drops++;
-          }
-          this.score += drops * 2;
-          this.lockPiece();
-          sfx.playHardDrop();
-        }
-
-        rotatePiece() {
-          const currentShape = this.getShape();
-          const nextRot = (this.currentRot + 1) % 4;
-          const N = currentShape.length;
-          const rotated = Array.from({ length: N }, () => Array(N).fill(0));
-          for (let r = 0; r < N; r++) {
-            for (let c = 0; c < N; c++) {
-              rotated[c][N - 1 - r] = currentShape[r][c];
+        isValidPosition(shape, x, y) {
+          for (let row = 0; row < shape.length; row++) {
+            for (let col = 0; col < shape[row].length; col++) {
+              if (shape[row][col]) {
+                const newX = x + col;
+                const newY = y + row;
+                if (newX < 0 || newX >= COLS || newY >= ROWS) return false;
+                if (newY >= 0 && boardData[newY][newX]) return false;
+              }
             }
           }
+          return true;
+        }
 
-          const kickType = this.currentPieceType === "I" ? "I" : "normal";
-          const transitionKey = `${this.currentRot}->${nextRot}`;
-          const kicks = WALL_KICKS[kickType][transitionKey] || [[0, 0]];
-
-          for (let i = 0; i < kicks.length; i++) {
-            const [kx, ky] = kicks[i];
-            const tryX = this.currentX + kx;
-            const tryY = this.currentY - ky;
-
-            if (!this.checkCollision(tryX, tryY, rotated)) {
-              this.currentX = tryX;
-              this.currentY = tryY;
-              this.currentRot = nextRot;
-              TETROMINOES[this.currentPieceType].shape = rotated;
-              this.updateActivePieceMesh();
-              sfx.playRotate();
-              return;
-            }
+        move(dx) {
+          if (this.isValidPosition(this.shape, this.x + dx, this.y)) {
+            this.x += dx;
+            this.updateMesh();
+            return true;
           }
+          return false;
         }
 
-        holdPiece() {
-          if (this.hasHeld) return;
-          sfx.playRotate();
-          const prevHold = this.holdPieceType;
-          this.holdPieceType = this.currentPieceType;
-          TETROMINOES[this.holdPieceType].shape = this.getDefaultShape(
-            this.holdPieceType,
-          );
-
-          if (prevHold) {
-            this.currentPieceType = prevHold;
-            this.currentX = Math.floor(
-              (COLS - TETROMINOES[this.currentPieceType].shape[0].length) / 2,
-            );
-            this.currentY = 0;
-            this.currentRot = 0;
-            this.updateActivePieceMesh();
-          } else {
-            this.spawnPiece();
+        moveDown() {
+          if (this.isValidPosition(this.shape, this.x, this.y + 1)) {
+            this.y += 1;
+            this.updateMesh();
+            return true;
           }
-          this.hasHeld = true;
-          this.updatePreviewPanels();
+          return false;
         }
 
-        getDefaultShape(type) {
-          const raw = {
-            I: [
-              [0, 0, 0, 0],
-              [1, 1, 1, 1],
-              [0, 0, 0, 0],
-              [0, 0, 0, 0],
-            ],
-            O: [
-              [1, 1],
-              [1, 1],
-            ],
-            T: [
-              [0, 1, 0],
-              [1, 1, 1],
-              [0, 0, 0],
-            ],
-            S: [
-              [0, 1, 1],
-              [1, 1, 0],
-              [0, 0, 0],
-            ],
-            Z: [
-              [1, 1, 0],
-              [0, 1, 1],
-              [0, 0, 0],
-            ],
-            J: [
-              [1, 0, 0],
-              [1, 1, 1],
-              [0, 0, 0],
-            ],
-            L: [
-              [0, 0, 1],
-              [1, 1, 1],
-              [0, 0, 0],
-            ],
-          };
-          return raw[type];
-        }
-
-        lockPiece() {
-          const shape = this.getShape();
-          const color = TETROMINOES[this.currentPieceType].color;
-
-          for (let r = 0; r < shape.length; r++) {
-            for (let c = 0; c < shape[r].length; c++) {
-              if (shape[r][c]) {
-                const gridX = this.currentX + c;
-                const gridY = this.currentY + r;
-                if (gridY >= 0) {
-                  this.grid[gridY][gridX] = color;
-                  const staticMesh = this.createBlockMesh(color);
-                  staticMesh.position.set(
-                    gridX - COLS / 2 + 0.5,
-                    -gridY + ROWS / 2 - 0.5,
-                    0,
-                  );
-                  this.scene.add(staticMesh);
-                  this.gridMeshes[gridY][gridX] = staticMesh;
+        updateMesh() {
+          this.mesh.children.forEach((child, index) => {
+            let count = 0;
+            for (let y = 0; y < this.shape.length; y++) {
+              for (let x = 0; x < this.shape[y].length; x++) {
+                if (this.shape[y][x]) {
+                  if (count === index) {
+                    child.position.x = this.x + x - 1.5;
+                    child.position.y = -(this.y + y - 1.5);
+                  }
+                  count++;
                 }
               }
             }
-          }
-          sfx.playLand();
-          this.clearLines();
-          this.spawnPiece();
-        }
-
-        clearLines() {
-          let linesClearedNow = 0;
-          for (let r = ROWS - 1; r >= 0; r--) {
-            const isComplete = this.grid[r].every((val) => val !== 0);
-            if (isComplete) {
-              linesClearedNow++;
-              for (let c = 0; c < COLS; c++) {
-                const mesh = this.gridMeshes[r][c];
-                if (mesh) this.scene.remove(mesh);
-              }
-              this.grid.splice(r, 1);
-              this.gridMeshes.splice(r, 1);
-              this.grid.unshift(Array(COLS).fill(0));
-              this.gridMeshes.unshift(Array(COLS).fill(null));
-              r++;
-            }
-          }
-
-          if (linesClearedNow > 0) {
-            sfx.playLineClear();
-            this.lines += linesClearedNow;
-            const basePoints = [0, 100, 300, 500, 800];
-            this.score += basePoints[linesClearedNow] * this.level;
-            const nextLevel = Math.floor(this.lines / 10) + 1;
-            if (nextLevel > this.level) {
-              this.level = nextLevel;
-              sfx.playLevelUp();
-              this.dropTime = Math.max(100, 1000 - (this.level - 1) * 90);
-            }
-            this.updateHUD();
-            this.repositionGridMeshes();
-          }
-        }
-
-        repositionGridMeshes() {
-          for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-              const mesh = this.gridMeshes[r][c];
-              if (mesh) mesh.position.y = -r + ROWS / 2 - 0.5;
-            }
-          }
-        }
-
-        updateActivePieceMesh() {
-          while (this.activeMeshGroup.children.length > 0) {
-            this.activeMeshGroup.remove(this.activeMeshGroup.children[0]);
-          }
-          const shape = this.getShape();
-          const color = TETROMINOES[this.currentPieceType].color;
-          for (let r = 0; r < shape.length; r++) {
-            for (let c = 0; c < shape[r].length; c++) {
-              if (shape[r][c]) {
-                const mesh = this.createBlockMesh(color);
-                mesh.position.set(c, -r, 0);
-                this.activeMeshGroup.add(mesh);
-              }
-            }
-          }
-          this.activeMeshGroup.position.set(
-            this.currentX - COLS / 2 + 0.5,
-            -this.currentY + ROWS / 2 - 0.5,
-            0,
-          );
-        }
-
-        updatePreviewPanels() {
-          while (this.nextScene.children.length > 2)
-            this.nextScene.remove(this.nextScene.children[2]);
-          while (this.holdScene.children.length > 2)
-            this.holdScene.remove(this.holdScene.children[2]);
-          if (this.nextPieceType) {
-            this.nextScene.add(this.createPreviewGroup(this.nextPieceType));
-          }
-          if (this.holdPieceType) {
-            this.holdScene.add(this.createPreviewGroup(this.holdPieceType));
-          }
-        }
-
-        createPreviewGroup(type) {
-          const group = new THREE.Group();
-          const shape = TETROMINOES[type].shape;
-          const color = TETROMINOES[type].color;
-          const size = shape.length;
-          const offsetX = -size / 2 + 0.5;
-          const offsetY = size / 2 - 0.5;
-          for (let r = 0; r < size; r++) {
-            for (let c = 0; c < shape[r].length; c++) {
-              if (shape[r][c]) {
-                const mesh = this.createBlockMesh(color);
-                mesh.position.set(c + offsetX, -r + offsetY, 0);
-                group.add(mesh);
-              }
-            }
-          }
-          group.scale.set(0.7, 0.7, 0.7);
-          return group;
-        }
-
-        animate() {
-          requestAnimationFrame(() => this.animate());
-          const now = performance.now();
-          const delta = now - this.lastTime;
-          this.lastTime = now;
-          if (this.gameState === "playing") {
-            this.dropAccumulator += delta;
-            const currentDropSpeed = this.isSoftDropping ? 50 : this.dropTime;
-            if (this.dropAccumulator >= currentDropSpeed) {
-              this.dropAccumulator = 0;
-              if (
-                !this.checkCollision(
-                  this.currentX,
-                  this.currentY + 1,
-                  this.getShape(),
-                )
-              ) {
-                this.currentY++;
-                this.updateActivePieceMesh();
-              } else {
-                this.lockPiece();
-              }
-            }
-            const targetCamX = (this.currentX - COLS / 2) * 0.15;
-            this.camera.position.x +=
-              (targetCamX - this.camera.position.x) * 0.05;
-          }
-          this.renderer.render(this.scene, this.camera);
-          this.nextRenderer.render(this.nextScene, this.nextCamera);
-          this.holdRenderer.render(this.holdScene, this.holdCamera);
+          });
         }
       }
 
-      window.addEventListener("DOMContentLoaded", () => {
-        new Game();
+      function spawnPiece() {
+        if (!nextPiece) nextPiece = randomTetromino();
+        currentPiece = new Tetromino(nextPiece.shape, nextPiece.color);
+        nextPiece = randomTetromino();
+        canHold = true;
+        scene.add(currentPiece.mesh);
+
+        if (!currentPiece.isValidPosition(currentPiece.shape, currentPiece.x, currentPiece.y)) {
+          endGame();
+        }
+
+        updateNextPreview();
+      }
+
+      function mergePiece() {
+        currentPiece.shape.forEach((row, y) => {
+          row.forEach((cell, x) => {
+            if (cell) {
+              const boardY = currentPiece.y + y;
+              if (boardY >= 0) {
+                boardData[boardY][currentPiece.x + x] = currentPiece.color;
+              }
+            }
+          });
+        });
+
+        clearLines();
+        scene.remove(currentPiece.mesh);
+        spawnPiece();
+      }
+
+      function clearLines() {
+        for (let row = ROWS - 1; row >= 0; row--) {
+          if (boardData[row].every((cell) => cell)) {
+            boardData.splice(row, 1);
+            boardData.unshift(Array(COLS).fill(0));
+            lines++;
+            score += 100 * level;
+            sfx.playLineClear();
+
+            if (lines % 10 === 0) {
+              level++;
+              dropInterval = Math.max(100, 800 - level * 50);
+              sfx.playLevelUp();
+            }
+
+            updateStats();
+          }
+        }
+      }
+
+      function hardDrop() {
+        while (currentPiece.moveDown()) {}
+        sfx.playHardDrop();
+        mergePiece();
+      }
+
+      function updateNextPreview() {
+        const nextPreview = document.getElementById("next-preview");
+        nextPreview.innerHTML = "";
+        if (nextPiece) {
+          const previewCanvas = document.createElement("canvas");
+          previewCanvas.width = 120;
+          previewCanvas.height = 120;
+          const ctx = previewCanvas.getContext("2d");
+          ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+          ctx.fillRect(0, 0, 120, 120);
+
+          const cellSize = 20;
+          const offsetX = (120 - nextPiece.shape[0].length * cellSize) / 2;
+          const offsetY = (120 - nextPiece.shape.length * cellSize) / 2;
+
+          nextPiece.shape.forEach((row, y) => {
+            row.forEach((cell, x) => {
+              if (cell) {
+                ctx.fillStyle = `#${nextPiece.color.toString(16).padStart(6, "0")}`;
+                ctx.fillRect(
+                  offsetX + x * cellSize,
+                  offsetY + y * cellSize,
+                  cellSize - 2,
+                  cellSize - 2,
+                );
+              }
+            });
+          });
+
+          nextPreview.appendChild(previewCanvas);
+        }
+      }
+
+      function updateHoldPreview() {
+        const holdPreview = document.getElementById("hold-preview");
+        holdPreview.innerHTML = "";
+        if (holdPiece) {
+          const previewCanvas = document.createElement("canvas");
+          previewCanvas.width = 120;
+          previewCanvas.height = 120;
+          const ctx = previewCanvas.getContext("2d");
+          ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+          ctx.fillRect(0, 0, 120, 120);
+
+          const cellSize = 20;
+          const offsetX = (120 - holdPiece.shape[0].length * cellSize) / 2;
+          const offsetY = (120 - holdPiece.shape.length * cellSize) / 2;
+
+          holdPiece.shape.forEach((row, y) => {
+            row.forEach((cell, x) => {
+              if (cell) {
+                ctx.fillStyle = `#${holdPiece.color.toString(16).padStart(6, "0")}`;
+                ctx.fillRect(
+                  offsetX + x * cellSize,
+                  offsetY + y * cellSize,
+                  cellSize - 2,
+                  cellSize - 2,
+                );
+              }
+            });
+          });
+
+          holdPreview.appendChild(previewCanvas);
+        }
+      }
+
+      function holdCurrentPiece() {
+        if (!canHold || !currentPiece) return;
+        canHold = false;
+        const temp = holdPiece;
+        holdPiece = { shape: currentPiece.shape, color: currentPiece.color };
+        scene.remove(currentPiece.mesh);
+
+        if (temp) {
+          currentPiece = new Tetromino(temp.shape, temp.color);
+          scene.add(currentPiece.mesh);
+        } else {
+          spawnPiece();
+        }
+
+        updateHoldPreview();
+        sfx.playMove();
+      }
+
+      function updateStats() {
+        document.getElementById("score-val").textContent = String(score).padStart(6, "0");
+        document.getElementById("highscore-val").textContent = String(highScore).padStart(6, "0");
+        document.getElementById("level-val").textContent = level;
+        document.getElementById("lines-val").textContent = lines;
+      }
+
+      function startGame() {
+        gameRunning = true;
+        gamePaused = false;
+        document.getElementById("start-overlay").classList.remove("active");
+        score = 0;
+        lines = 0;
+        level = 1;
+        dropInterval = 800;
+        boardData.length = 0;
+        for (let i = 0; i < ROWS; i++) boardData.push(Array(COLS).fill(0));
+
+        scene.children.forEach((obj) => {
+          if (obj instanceof THREE.Group && obj !== currentPiece?.mesh) {
+            scene.remove(obj);
+          }
+        });
+
+        spawnPiece();
+        updateStats();
+      }
+
+      function pauseGame() {
+        gamePaused = !gamePaused;
+        if (gamePaused) {
+          document.getElementById("pause-overlay").classList.add("active");
+        } else {
+          document.getElementById("pause-overlay").classList.remove("active");
+        }
+      }
+
+      function endGame() {
+        gameRunning = false;
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem("tetris-highscore", highScore);
+        }
+        document.getElementById("final-score").textContent = score;
+        document.getElementById("final-level").textContent = level;
+        document.getElementById("final-lines").textContent = lines;
+        document.getElementById("gameover-overlay").classList.add("active");
+        sfx.playGameOver();
+      }
+
+      // Keyboard controls
+      document.addEventListener("keydown", (e) => {
+        if (!gameRunning || gamePaused) return;
+
+        keys[e.key] = true;
+
+        if (e.key === "ArrowLeft") {
+          currentPiece.move(-1);
+          sfx.playMove();
+        } else if (e.key === "ArrowRight") {
+          currentPiece.move(1);
+          sfx.playMove();
+        } else if (e.key === "ArrowUp") {
+          if (currentPiece.canRotate()) {
+            sfx.playRotate();
+          }
+        } else if (e.key === " ") {
+          hardDrop();
+        } else if (e.key.toLowerCase() === "c" || e.key === "Shift") {
+          holdCurrentPiece();
+        } else if (e.key.toLowerCase() === "p" || e.key === "Escape") {
+          pauseGame();
+        }
+      });
+
+      document.addEventListener("keyup", (e) => {
+        keys[e.key] = false;
+      });
+
+      // Mobile controls - Fixed soft drop issue
+      const btnLeft = document.getElementById("btn-left");
+      const btnRight = document.getElementById("btn-right");
+      const btnDown = document.getElementById("btn-down");
+      const btnHard = document.getElementById("btn-hard");
+      const btnRotate = document.getElementById("btn-rotate");
+      const btnHold = document.getElementById("btn-hold");
+      const btnPause = document.getElementById("btn-pause");
+
+      // Helper function to handle button interactions
+      function handleMobileControl(btnElement, controlKey, onActivate, onDeactivate) {
+        btnElement.addEventListener("touchstart", (e) => {
+          e.preventDefault();
+          mobileControlState[controlKey] = true;
+          if (onActivate) onActivate();
+        });
+
+        btnElement.addEventListener("touchend", (e) => {
+          e.preventDefault();
+          mobileControlState[controlKey] = false;
+          if (onDeactivate) onDeactivate();
+        });
+
+        btnElement.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          mobileControlState[controlKey] = true;
+          if (onActivate) onActivate();
+        });
+
+        btnElement.addEventListener("mouseup", (e) => {
+          e.preventDefault();
+          mobileControlState[controlKey] = false;
+          if (onDeactivate) onDeactivate();
+        });
+      }
+
+      // Left button
+      handleMobileControl(btnLeft, "left", () => {
+        if (gameRunning && !gamePaused && currentPiece) {
+          currentPiece.move(-1);
+          sfx.playMove();
+        }
+      });
+
+      // Right button
+      handleMobileControl(btnRight, "right", () => {
+        if (gameRunning && !gamePaused && currentPiece) {
+          currentPiece.move(1);
+          sfx.playMove();
+        }
+      });
+
+      // Soft drop button - FIXED: Properly handle touchend/mouseup to stop soft drop
+      let softDropInterval = null;
+      handleMobileControl(
+        btnDown,
+        "down",
+        () => {
+          if (gameRunning && !gamePaused && currentPiece) {
+            // Clear any existing interval first
+            if (softDropInterval) clearInterval(softDropInterval);
+            
+            // Immediately move down once
+            if (currentPiece.moveDown()) {
+              sfx.playMove();
+            }
+            
+            // Start continuous soft drop while button is held
+            softDropInterval = setInterval(() => {
+              if (mobileControlState.down && currentPiece) {
+                if (!currentPiece.moveDown()) {
+                  mergePiece();
+                  clearInterval(softDropInterval);
+                  softDropInterval = null;
+                }
+              }
+            }, 100);
+          }
+        },
+        () => {
+          // Clear interval when button is released
+          if (softDropInterval) {
+            clearInterval(softDropInterval);
+            softDropInterval = null;
+          }
+        }
+      );
+
+      // Hard drop button
+      handleMobileControl(btnHard, "hard", () => {
+        if (gameRunning && !gamePaused && currentPiece) {
+          hardDrop();
+        }
+      });
+
+      // Rotate button
+      handleMobileControl(btnRotate, "rotate", () => {
+        if (gameRunning && !gamePaused && currentPiece) {
+          if (currentPiece.canRotate()) {
+            sfx.playRotate();
+          }
+        }
+      });
+
+      // Hold button
+      handleMobileControl(btnHold, "hold", () => {
+        if (gameRunning && !gamePaused) {
+          holdCurrentPiece();
+        }
+      });
+
+      // Pause button
+      handleMobileControl(btnPause, "pause", () => {
+        if (gameRunning) {
+          pauseGame();
+        }
+      });
+
+      // Button event listeners
+      document.getElementById("start-btn").addEventListener("click", startGame);
+      document.getElementById("resume-btn").addEventListener("click", pauseGame);
+      document.getElementById("restart-btn").addEventListener("click", startGame);
+      document.getElementById("play-again-btn").addEventListener("click", startGame);
+      document.getElementById("mute-btn").addEventListener("click", () => {
+        const muted = sfx.toggleMute();
+        document
+          .getElementById("mute-btn")
+          .classList.toggle("muted", muted);
+      });
+
+      // Game loop
+      let lastDropTime = 0;
+      function gameLoop() {
+        requestAnimationFrame(gameLoop);
+
+        if (!gameRunning || gamePaused) {
+          renderer.render(scene, camera);
+          return;
+        }
+
+        const now = Date.now();
+
+        // Soft drop by holding down arrow key
+        if (keys["ArrowDown"] && currentPiece) {
+          if (!currentPiece.moveDown()) {
+            mergePiece();
+          }
+        }
+
+        // Automatic drop
+        if (now - lastDropTime > dropInterval) {
+          if (currentPiece) {
+            if (!currentPiece.moveDown()) {
+              sfx.playLand();
+              mergePiece();
+            }
+          }
+          lastDropTime = now;
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      gameLoop();
+
+      // Handle window resize
+      window.addEventListener("resize", () => {
+        const newWidth = container.clientWidth;
+        const newHeight = container.clientHeight;
+        camera.aspect = newWidth / newHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(newWidth, newHeight);
       });
     </script>
   </body>
